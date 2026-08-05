@@ -1,0 +1,135 @@
+name: wheels
+
+# Builds the platform wheels and publishes them to PyPI on release.
+#
+# This workflow is the wheel layer only: it downloads prebuilt plastimatch archives pinned in
+# plastimatchUrls.cmake and packages them. It does not compile anything, which is why it
+# finishes in minutes rather than the couple of hours the binaries themselves take. The
+# archives are produced separately by build-binaries.yml.
+
+on:
+  workflow_dispatch:
+  release:
+    types:
+      - published
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_COLOR: 3
+
+jobs:
+  make_sdist:
+    name: Make SDist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Build SDist
+        run: pipx run build --sdist
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cibw-sdist
+          path: dist/*.tar.gz
+
+  build_wheels:
+    name: Wheel on ${{ matrix.os }} (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # One runner per target architecture. The wheels wrap prebuilt single-architecture
+          # binaries, so there is nothing to cross-compile -- the archive that gets
+          # downloaded is chosen by the host architecture in plastimatchUrls.cmake.
+          - os: ubuntu-latest
+            arch: x86_64
+          - os: macos-14
+            arch: arm64
+          - os: macos-15-intel
+            arch: x86_64
+          - os: windows-latest
+            arch: AMD64
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: pypa/cibuildwheel@v4.1.1
+        env:
+          CIBW_ARCHS: ${{ matrix.arch }}
+          # musl images have no prebuilt plastimatch archive to wrap.
+          CIBW_SKIP: "*musllinux*"
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v7
+        with:
+          name: cibw-wheels-${{ matrix.os }}-${{ matrix.arch }}
+          path: wheelhouse/*.whl
+
+  test_sdist:
+    name: Test SDist with python ${{ matrix.python }}
+    needs: [make_sdist]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: cibw-sdist
+          path: dist
+
+      - name: Install SDist and test dependencies
+        run: |
+          pip install pytest pytest-cov
+          pip install dist/*.tar.gz
+          rm -rf dist
+
+      - name: Test installed SDist
+        run: pytest ./tests
+
+  check_dist:
+    name: Check dist
+    needs: [build_wheels, make_sdist, test_sdist]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: all
+
+      - run: pipx run twine check --strict all/*/*
+
+      - name: Show wheel tags
+        run: ls -la all/*/*
+
+  upload_all:
+    name: Publish to PyPI
+    needs: [check_dist]
+    environment: pypi
+    permissions:
+      id-token: write
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release' && github.event.action == 'published'
+
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: cibw-*
+          path: dist
+          merge-multiple: true
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
