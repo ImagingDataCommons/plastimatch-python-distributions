@@ -34,7 +34,11 @@ jobs:
         include:
           - os: ubuntu-latest
             arch: x86_64
-          - os: macos-14
+          # macos-15 rather than macos-14: the arm64 binaries currently declare a minimum of
+          # macOS 15, so a macOS 14 runner cannot install or execute the wheel it just built
+          # and the test step could never pass. Lowering the binaries' deployment target is a
+          # build-layer change; this runner works either way.
+          - os: macos-15
             arch: arm64
           - os: macos-15-intel
             arch: x86_64

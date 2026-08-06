@@ -40,21 +40,27 @@ and
 
 ## Supported platforms
 
-| Platform | Wheel tag | Minimum OS |
-| --- | --- | --- |
-| Linux x86_64 | `manylinux_2_39_x86_64` | glibc 2.39 (Ubuntu 24.04+) |
-| macOS arm64 (Apple Silicon) | `macosx_15_0_arm64` | macOS 15 |
-| macOS x86_64 (Intel) | `macosx_15_0_x86_64` | macOS 15 |
-| Windows x86_64 | `win_amd64` | Windows 10+ |
+| Platform | Wheel tag | Minimum OS | Status |
+| --- | --- | --- | --- |
+| Windows x86_64 | `win_amd64` | Windows 10+ | working |
+| macOS x86_64 (Intel) | `macosx_15_0_x86_64` | macOS 15 | working, floor too high |
+| macOS arm64 (Apple Silicon) | `macosx_15_0_arm64` | macOS 15 | working, floor too high |
+| Linux x86_64 | `manylinux_2_38_x86_64` | glibc 2.38 (Ubuntu 23.10+) | **not publishable yet** |
 
 The platform tags are derived from the bundled binaries rather than declared by hand (see
 `scripts/retag_*_wheel.sh`), so they always describe what the wheel can actually run on.
 
-The Linux and macOS floors are higher than they need to be: they are inherited from the
-runner images the binaries are currently compiled on, not from anything plastimatch requires.
-Lowering them is a build-layer change — compiling Linux inside a `manylinux_2_28` container
-and passing `-DCMAKE_OSX_DEPLOYMENT_TARGET=13.0` on macOS — and the wheel layer will pick up
-the lower floors automatically.
+These floors are inherited from the runner images the binaries are compiled on, not from
+anything plastimatch requires, and all three are lowered in the build layer rather than here.
+The wheel layer picks up the lower floors automatically once the binaries change.
+
+The Linux floor is a hard blocker rather than an inconvenience: glibc 2.38 is newer than any
+manylinux image pypa publishes, so the wheel cannot be built or tested in a conforming
+environment at all. Building plastimatch and its dependencies inside `manylinux_2_28` is a
+prerequisite for publishing Linux wheels.
+
+On macOS, `-DCMAKE_OSX_DEPLOYMENT_TARGET=13.0` would restore support for macOS 13 and 14,
+which currently covers a large share of Apple Silicon machines.
 
 ## How it works
 
