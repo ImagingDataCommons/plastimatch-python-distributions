@@ -6,7 +6,12 @@ Reads the assets attached to a GitHub release, downloads each platform archive, 
 SHA256, and rewrites the pinned filenames and checksums in place. Run this whenever the
 wheels should be built from a new set of binaries:
 
-    python scripts/update_plastimatch_urls.py --repo fedorov/plastimatch --tag latest
+    python scripts/update_plastimatch_urls.py \
+        --repo fedorov/plastimatch-python-distributions --tag <tag>
+
+``--repo`` is whichever repository hosts the archives. The intended source is this one, via a
+release cut by build-binaries.yml; the pins currently reference fedorov/plastimatch instead,
+which is an interim arrangement documented in plastimatchUrls.cmake.
 
 Set ``GITHUB_TOKEN`` in the environment to read a private repository or to avoid the
 unauthenticated API rate limit.

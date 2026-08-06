@@ -38,29 +38,47 @@ and
 | `plastimatch` | The main multi-command driver (`convert`, `register`, `warp`, `synth`, `dice`, …) |
 | `dicom_uid` | Generate DICOM UIDs |
 
+## Current state
+
+Nothing is published to PyPI yet, and the two layers described below are not yet joined up:
+the build layer works but has not cut a release, so `plastimatchUrls.cmake` still pins
+archives built by an older set of per-platform workflows in a **plastimatch fork**
+(`fedorov/plastimatch`) that predates this repository.
+
+That is the only reason the pins name a repository other than this one. Once the build layer
+publishes a release, the pins move to this repository's own archives and the fork stops being
+involved — see [Repointing the pins](#repointing-the-pins). Until then the two tables below
+differ, and the first one is what `pip install` would actually get.
+
 ## Supported platforms
+
+What the **currently pinned** archives support:
 
 | Platform | Wheel tag | Minimum OS | Status |
 | --- | --- | --- | --- |
 | Windows x86_64 | `win_amd64` | Windows 10+ | working |
 | macOS x86_64 (Intel) | `macosx_15_0_x86_64` | macOS 15 | working, floor too high |
 | macOS arm64 (Apple Silicon) | `macosx_15_0_arm64` | macOS 15 | working, floor too high |
-| Linux x86_64 | `manylinux_2_38_x86_64` | glibc 2.38 (Ubuntu 23.10+) | **not publishable yet** |
+| Linux x86_64 | `manylinux_2_38_x86_64` | glibc 2.38 (Ubuntu 23.10+) | **not publishable** |
+
+What the **build layer in this repository** produces:
+
+| Platform | Wheel tag | Minimum OS |
+| --- | --- | --- |
+| Windows x86_64 | `win_amd64` | Windows 10+ |
+| macOS x86_64 (Intel) | `macosx_13_0_x86_64` | macOS 13 |
+| macOS arm64 (Apple Silicon) | `macosx_13_0_arm64` | macOS 13 |
+| Linux x86_64 | `manylinux_2_28_x86_64` | glibc 2.28 (RHEL 8, Debian 10, Ubuntu 18.10+) |
 
 The platform tags are derived from the bundled binaries rather than declared by hand (see
-`scripts/retag_*_wheel.sh`), so they always describe what the wheel can actually run on.
+`scripts/retag_*_wheel.sh`), so they always describe what the wheel can actually run on, and
+the wheel layer picks up the lower floors automatically once the pins move.
 
-These floors are inherited from the runner images the binaries are compiled on, not from
-anything plastimatch requires, and all three are lowered in the build layer rather than here.
-The wheel layer picks up the lower floors automatically once the binaries change.
-
-The Linux floor is a hard blocker rather than an inconvenience: glibc 2.38 is newer than any
-manylinux image pypa publishes, so the wheel cannot be built or tested in a conforming
-environment at all. Building plastimatch and its dependencies inside `manylinux_2_28` is a
-prerequisite for publishing Linux wheels.
-
-On macOS, `-DCMAKE_OSX_DEPLOYMENT_TARGET=13.0` would restore support for macOS 13 and 14,
-which currently covers a large share of Apple Silicon machines.
+The floors in the first table are inherited from the runner images those binaries happened to
+be compiled on, not from anything plastimatch requires. The Linux one is a hard blocker rather
+than an inconvenience: glibc 2.38 is newer than any manylinux image pypa publishes, so that
+wheel cannot be built or tested in a conforming environment at all — which is why the build
+layer compiles inside `manylinux_2_28`, and why the Linux wheel job fails until the pins move.
 
 ## How it works
 
@@ -118,18 +136,33 @@ It does no compiling, so a wheel can be re-cut in seconds when only packaging me
 changes.
 
 `plastimatchUrls.cmake` is the seam. It names the archive and checksum for each platform and
-nothing else, which means the wheel layer is indifferent to who produced the binaries. If
-upstream plastimatch ever publishes its own release binaries, pointing this file at them and
-deleting the build layer is the entire migration.
+nothing else, which means the wheel layer is indifferent to who produced the binaries. That
+indifference is not hypothetical — it is what lets the pins currently reference a fork's
+archives while the build layer is still being brought up, and it is why pointing this file at
+upstream's own binaries and deleting the build layer would be the entire migration if
+plastimatch ever publishes them.
 
-## Choosing which plastimatch version to package
+## Repointing the pins
 
-`plastimatchUrls.cmake` pins the exact archives a wheel is built from. Regenerate it from a
-release with:
+`plastimatchUrls.cmake` pins the exact archives a wheel is built from — a filename and a
+SHA256 per platform. Regenerate that section from a release with:
 
 ```console
-python scripts/update_plastimatch_urls.py --repo fedorov/plastimatch --tag <tag>
+python scripts/update_plastimatch_urls.py --repo <owner>/<repo> --tag <tag>
 ```
+
+The `--repo` to use is whichever one hosts the archives:
+
+- `fedorov/plastimatch-python-distributions` — this repository, once `build-binaries.yml` has
+  been dispatched with a `release_tag`. **This is the intended steady state.**
+- `fedorov/plastimatch` — the fork whose older workflows produced the archives pinned today.
+  Interim only.
+
+Cutting a release is deliberately not automatic on push. The pins are checksums of specific
+assets, so replacing the assets under an existing tag would break every wheel build pointing
+at it; the workflow only attaches archives when a `release_tag` input is supplied explicitly.
+For the same reason the pins should reference an immutable tag rather than a rolling one
+before anything is published to PyPI.
 
 The wheel version itself comes from this repository's git tags via `setuptools_scm`. Tag
 releases to match the upstream plastimatch version being packaged (`1.10.0`), and use a

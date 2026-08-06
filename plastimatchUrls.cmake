@@ -8,7 +8,7 @@
 #
 # Regenerate the auto-generated section with:
 #
-#   python scripts/update_plastimatch_urls.py --repo fedorov/plastimatch --tag <tag>
+#   python scripts/update_plastimatch_urls.py --repo <owner>/<repo> --tag <tag>
 #
 # Two cache variables allow repointing a build without editing this file:
 #
@@ -17,6 +17,17 @@
 # Note that the checksums are always enforced. To build against a different set of
 # archives, run the update script rather than overriding the hash check.
 
+# NOTE: this points at a *plastimatch fork*, not at this repository, and that is temporary.
+# The archives pinned below were produced by an older set of per-platform workflows in that
+# fork, which is where the only plastimatch binaries existed when the wheel layer was written.
+# This repository's own build layer (superbuild/, .github/workflows/build-binaries.yml) now
+# produces equivalent archives with much lower runtime floors, but has not published a release
+# yet -- so nothing points at it. Dispatch build-binaries.yml with a release_tag, then rerun
+# the update script with --repo fedorov/plastimatch-python-distributions to switch over.
+#
+# The Linux wheel job fails until that happens: the archive pinned here needs GLIBCXX_3.4.32,
+# and scripts/retag_linux_wheel.sh refuses to stamp a manylinux tag on a binary that could not
+# run in the environment the tag promises.
 set(PLASTIMATCH_BINARIES_REPO "fedorov/plastimatch"
   CACHE STRING "GitHub repository hosting the plastimatch binary archives")
 set(PLASTIMATCH_BINARIES_TAG "latest"
