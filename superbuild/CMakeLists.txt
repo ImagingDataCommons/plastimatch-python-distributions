@@ -1,9 +1,16 @@
 # Build layer: compiles plastimatch and its dependencies into a self-contained package.
 #
-# This exists because upstream plastimatch publishes source archives only. Its own in-tree
-# superbuild is dead code -- the block in src/CMakeLists.txt driving SuperBuild/External_ITK
-# .cmake and External_DCMTK.cmake is wrapped in `if (false)`, and External_DCMTK.cmake still
-# points at the retired OFFIS ftp server -- so the dependencies have to be supplied here.
+# This exists because upstream plastimatch publishes source archives only, and its own in-tree
+# dependency superbuild cannot be used: SuperBuild/External_DCMTK.cmake fetches DCMTK 3.6.2
+# from ftp://dicom.offis.de, a server retired years ago, and neither it nor External_ITK.cmake
+# builds with the settings a redistributable package needs.
+#
+# That in-tree superbuild is live, not dead, and it is reached by *falling through* -- the top
+# level runs it whenever find_package fails, without an error. (The separate "Broken superbuild
+# stuff" block at src/CMakeLists.txt:550, which builds plastimatch inside itself, is the one
+# wrapped in `if (false)`.) External_plastimatch.cmake therefore sets PLM_SYSTEM_ITK and
+# PLM_SYSTEM_DCMTK to YES to make that fallback unreachable, and check_plastimatch_deps.cmake
+# verifies it stayed unreachable.
 #
 # Structured after dcmqi's CMakeExternals/, which is the reason dcmqi's Linux workflow is 133
 # lines where a hand-rolled equivalent is 500. One CMake invocation builds zlib-ng, ITK,
