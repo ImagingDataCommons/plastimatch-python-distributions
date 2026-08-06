@@ -76,10 +76,41 @@ The repository is deliberately split into two layers that meet at a single pinne
                                                      wheels ──> PyPI
 ```
 
-**The build layer** (`deps/`, `.github/workflows/build-binaries.yml`) compiles ITK, DCMTK,
-dlib and zlib-ng as static libraries, builds plastimatch against them, and attaches one
+**The build layer** (`superbuild/`, `.github/workflows/build-binaries.yml`) compiles zlib-ng,
+ITK, DCMTK and dlib as static libraries, builds plastimatch against them, and attaches one
 self-contained archive per platform to a GitHub release. This exists because upstream
 plastimatch publishes source archives only — there is no official binary to download.
+
+`superbuild/` is an `ExternalProject` chain in the style of dcmqi's `CMakeExternals/`, so one
+CMake invocation builds everything in dependency order on all three platforms:
+
+```console
+cmake -S superbuild -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+```
+
+Which plastimatch gets packaged is configurable, and defaults to the upstream GitLab
+repository — this project does not fork plastimatch:
+
+```console
+cmake -S superbuild -B build \
+  -DPLASTIMATCH_GIT_REPOSITORY=https://gitlab.com/plastimatch/plastimatch.git \
+  -DPLASTIMATCH_GIT_TAG=1.10.0
+```
+
+Everything the build consumes is pinned by content, not by name. The four dependencies carry
+a `URL_HASH SHA256`, and plastimatch is pinned to a full commit SHA with its tag recorded
+alongside. A version number alone is not a pin: GitHub's auto-generated tag tarballs are not
+guaranteed byte-stable, and a git tag is a mutable pointer — either could change what gets
+compiled into a published binary with no signal. This matches how `plastimatchUrls.cmake`
+pins the archives the wheels are built from, so the chain from upstream source to installed
+wheel is checksummed end to end.
+
+Linux builds run inside `manylinux_2_28` rather than on the runner. That is not incidental:
+compiling on `ubuntu-24.04` produces binaries requiring glibc 2.38 and GLIBCXX_3.4.32, which
+is newer than any manylinux image provides, so wheels built from them cannot be installed
+anywhere — including in cibuildwheel's own test container. `scripts/check_binary_floor.sh`
+asserts both floors after every Linux build.
 
 **The wheel layer** (`CMakeLists.txt`, `pyproject.toml`, `src/plastimatch/`) downloads one
 of those archives, verifies its SHA256, and installs the executables into a Python package.

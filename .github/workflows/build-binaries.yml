@@ -1,0 +1,197 @@
+name: build binaries
+
+# Build layer: compiles plastimatch and its dependencies into a self-contained archive per
+# platform, and attaches them to a GitHub release. The wheel layer (cd.yml) consumes those
+# archives through the pins in plastimatchUrls.cmake and never compiles anything.
+#
+# One matrixed job replaces the three ~500-line per-platform workflows this project started
+# from. The per-dependency build logic lives in superbuild/, so everything here is checkout,
+# cache, run a script, package.
+#
+# Linux builds inside a manylinux container rather than on the runner. Compiling on
+# ubuntu-24.04 produced binaries requiring glibc 2.38 and GLIBCXX_3.4.32, which is newer than
+# any manylinux image provides -- wheels built from them could not be installed anywhere,
+# including in cibuildwheel's own test container.
+
+on:
+  workflow_dispatch:
+    inputs:
+      plastimatch_tag:
+        description: "plastimatch tag, branch or commit to package"
+        required: false
+        default: "1.10.0"
+      release_tag:
+        description: "Attach the archives to this release tag (leave empty to only upload artifacts)"
+        required: false
+        default: ""
+  push:
+    branches: [main]
+    paths:
+      - "superbuild/**"
+      - "scripts/build_binaries.sh"
+      - "scripts/smoke_test_package.sh"
+      - "scripts/check_binary_floor.sh"
+      - ".github/workflows/build-binaries.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # AlmaLinux 8 / glibc 2.28. Chosen over dockcross/manylinux2014 (glibc 2.17, what dcmqi
+  # uses) because CentOS 7 is EOL and the newer toolchain is lower-risk for the C++17 that
+  # ITK 5.4 forces on everything downstream. Still covers RHEL 8, Debian 10, Ubuntu 18.10+.
+  MANYLINUX_IMAGE: quay.io/pypa/manylinux_2_28_x86_64
+  # Short form of the image, used in cache keys -- keep in sync with MANYLINUX_IMAGE.
+  MANYLINUX_ID: manylinux_2_28
+  PLM_TAG: ${{ inputs.plastimatch_tag || '1.10.0' }}
+  OSX_TARGET: "13.0"
+
+jobs:
+  build:
+    name: ${{ matrix.id }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    permissions:
+      contents: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: linux
+            os: ubuntu-latest
+          - id: mac-arm64
+            os: macos-15
+            osx_arch: arm64
+          - id: mac-x86_64
+            os: macos-15-intel
+            osx_arch: x86_64
+          - id: win64
+            os: windows-2022
+
+    steps:
+      - uses: actions/checkout@v7
+
+      # Content-addressed, following dcmqi: the key is a hash of the dependency definitions,
+      # so changing a version or a build flag invalidates exactly the affected build with no
+      # manual epoch to remember to bump. External_plastimatch.cmake is deliberately excluded
+      # -- packaging a different plastimatch tag should reuse the dependency cache.
+      #
+      # The container image is in the key because dependencies built on the runner are not
+      # interchangeable with ones built inside manylinux. Without it, a stale Ubuntu-built ITK
+      # would be restored into the container build and link glibc 2.38 objects straight back
+      # into the "fixed" binary, silently, with a green build.
+      - name: Restore dependency cache
+        id: cache-deps
+        uses: actions/cache@v5
+        with:
+          path: |
+            build/deps
+            build/zlib/src/zlib-stamp
+            build/itk/src/ITK-stamp
+            build/dcmtk/src/DCMTK-stamp
+            build/dlib/src/dlib-stamp
+          key: >-
+            ${{ matrix.id }}-${{ matrix.id == 'linux' && env.MANYLINUX_ID || matrix.os }}-deps-${{
+              hashFiles('superbuild/CMakeLists.txt',
+                        'superbuild/External_zlib.cmake',
+                        'superbuild/External_ITK.cmake',
+                        'superbuild/External_DCMTK.cmake',
+                        'superbuild/External_dlib.cmake',
+                        'superbuild/canonicalize_zlib.cmake') }}
+
+      - name: Install ninja (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja
+
+      #-------------------------------------------------------------------------------------
+      # Build
+      #-------------------------------------------------------------------------------------
+      # The JS actions above and below stay on the host; only the build runs in the container.
+      # Running the whole job with `container:` would put actions/checkout and actions/cache
+      # inside an image whose node compatibility is not guaranteed.
+      - name: Build (Linux, in manylinux)
+        if: matrix.id == 'linux'
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "${{ github.workspace }}:/work" \
+            -w /work \
+            -e SOURCE_DIR=/work \
+            -e BUILD_DIR=/work/build \
+            -e PLM_GIT_TAG="${PLM_TAG}" \
+            "${MANYLINUX_IMAGE}" \
+            bash -c '
+              set -euo pipefail
+              export PATH="/opt/python/cp312-cp312/bin:$PATH"
+              pip install --quiet cmake ninja
+              cmake --version && ninja --version && gcc --version | head -1
+              bash /work/scripts/build_binaries.sh
+            '
+          # Files written inside the container are root-owned, which breaks the later steps.
+          sudo chown -R "$(id -u):$(id -g)" build
+
+      - name: Build (macOS and Windows)
+        if: matrix.id != 'linux'
+        shell: bash
+        env:
+          SOURCE_DIR: ${{ github.workspace }}
+          BUILD_DIR: ${{ github.workspace }}/build
+          PLM_GIT_TAG: ${{ env.PLM_TAG }}
+          OSX_ARCH: ${{ matrix.osx_arch }}
+        run: bash scripts/build_binaries.sh
+
+      #-------------------------------------------------------------------------------------
+      # Package
+      #-------------------------------------------------------------------------------------
+      # CPack alone produces plastimatch-1.10.0-Linux.zip for every build. Rename so the asset
+      # carries the platform, build date and the plastimatch commit it was built from: the
+      # per-platform assets then do not collide on a release, and it is possible to tell which
+      # source a given archive came from. update_plastimatch_urls.py matches on the platform
+      # infix, so those must stay as they are.
+      - name: Name the package
+        id: pkg
+        shell: bash
+        run: |
+          set -euo pipefail
+          plm_build="build/plastimatch-build"
+          src=$(ls "$plm_build"/plastimatch-*.zip | head -1)
+          base=$(basename "$src")
+          ver=$(echo "$base" | sed -E 's/^plastimatch-([0-9][0-9.]*)-.*/\1/')
+          sha=$(git -C build/plastimatch/src/plastimatch rev-parse --short=7 HEAD)
+          dst="plastimatch-${ver}-${{ matrix.id }}-$(date -u +%Y%m%d)-${sha}.zip"
+          mv "$src" "$plm_build/$dst"
+          echo "path=$plm_build/$dst" >> "$GITHUB_OUTPUT"
+          echo "name=$dst" >> "$GITHUB_OUTPUT"
+          echo "built plastimatch $ver from commit $sha"
+
+      # The reason this project exists in its current shape. Checked before the smoke test so
+      # a floor regression is reported as itself rather than as a confusing runtime failure.
+      - name: Check runtime floor (Linux)
+        if: matrix.id == 'linux'
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/floor && mkdir -p /tmp/floor
+          unzip -q "${{ steps.pkg.outputs.path }}" -d /tmp/floor
+          bash scripts/check_binary_floor.sh /tmp/floor
+
+      - name: Smoke-test the package
+        shell: bash
+        run: bash scripts/smoke_test_package.sh "${{ steps.pkg.outputs.path }}"
+
+      - name: Upload package as artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: plastimatch-${{ matrix.id }}
+          path: ${{ steps.pkg.outputs.path }}
+
+      # Opt-in. Creating or amending a release is deliberately not automatic on push -- the
+      # pins in plastimatchUrls.cmake are checksums of specific assets, so silently replacing
+      # them under an existing tag would break every wheel build pointing at it.
+      - name: Attach to release
+        if: ${{ inputs.release_tag != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: gh release upload "${{ inputs.release_tag }}" "${{ steps.pkg.outputs.path }}" --clobber

@@ -27,23 +27,54 @@ trap 'rm -rf "$workdir"' EXIT
 
 unzip -q "$wheel_path" -d "$workdir/unpacked"
 
-# Collect every GLIBC_x.y version referenced by any ELF file in the wheel and keep the
-# highest. readelf -V reads .gnu.version_r, which is where the versioned symbol
-# requirements live.
-versions=""
-while IFS= read -r -d '' f; do
-  if head -c 4 "$f" | grep -q $'\x7fELF'; then
-    v="$(readelf -V "$f" 2>/dev/null | grep -oE 'GLIBC_[0-9]+\.[0-9]+' || true)"
-    versions="$versions$v"$'\n'
-  fi
-done < <(find "$workdir/unpacked" -type f -print0)
+# Highest version referenced under a symbol namespace across every ELF file in the wheel.
+# readelf -V reads .gnu.version_r, which is where versioned symbol requirements live.
+highest() {
+  local prefix="$1" found=""
+  while IFS= read -r -d '' f; do
+    if head -c 4 "$f" | grep -q $'\x7fELF'; then
+      found+="$(readelf -V "$f" 2>/dev/null | grep -oE "${prefix}_[0-9][0-9.]*" || true)"$'\n'
+    fi
+  done < <(find "$workdir/unpacked" -type f -print0)
+  printf '%s' "$found" | sed "s/^${prefix}_//" | grep -E '^[0-9]' | sort -V | tail -n1
+}
 
-max_glibc="$(printf '%s' "$versions" | grep -oE '[0-9]+\.[0-9]+' | sort -V | tail -n1 || true)"
+exceeds() {
+  [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n1)" = "$1" ] && [ "$1" != "$2" ]
+}
+
+max_glibc="$(highest GLIBC)"
 
 if [ -z "$max_glibc" ]; then
   echo "::error::found no ELF binaries in $wheel_path -- refusing to guess a platform tag"
   exit 1
 fi
+
+# The glibc version becomes the platform tag, but glibc is not the only runtime dependency
+# and it is the only one a tag can express. A binary built with a gcc-toolset newer than its
+# container's base runtime satisfies glibc and still requires a libstdc++ that the target
+# distributions do not ship -- pip would install the wheel and it would fail with
+# "GLIBCXX_3.4.32 not found". There is no tag for that, so it has to be a hard failure.
+#
+# Limits correspond to the libstdc++ shipped with the glibc baseline being targeted:
+#   glibc 2.28 (RHEL 8)  -> GCC 8  -> GLIBCXX_3.4.25, CXXABI_1.3.11
+max_glibcxx_allowed="${MAX_GLIBCXX:-3.4.25}"
+max_cxxabi_allowed="${MAX_CXXABI:-1.3.11}"
+
+fail=0
+for ns in "GLIBCXX:${max_glibcxx_allowed}" "CXXABI:${max_cxxabi_allowed}"; do
+  prefix="${ns%%:*}"
+  limit="${ns##*:}"
+  actual="$(highest "$prefix")"
+  if [ -n "$actual" ] && exceeds "$actual" "$limit"; then
+    echo "::error::wheel requires ${prefix}_${actual}, but the targeted baseline provides at most ${prefix}_${limit}"
+    echo "          Build the binaries against an older C++ runtime, or link it statically."
+    fail=1
+  elif [ -n "$actual" ]; then
+    echo "${prefix}: requires ${actual}, baseline ${limit} — ok"
+  fi
+done
+[ "$fail" -eq 0 ] || exit 1
 
 tag="manylinux_${max_glibc//./_}_${arch}"
 echo "bundled binaries require glibc >= ${max_glibc}; tagging wheel as ${tag}"
