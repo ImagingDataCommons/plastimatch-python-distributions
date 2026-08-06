@@ -35,7 +35,11 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Deliberately not cancel-in-progress, unlike the wheel workflows. A cold build here is
+  # 30-60 minutes per platform, so cancelling on every push discards a lot of work and, worse,
+  # discards the results of platforms that were about to tell you something. A new run queues
+  # behind the current one instead.
+  cancel-in-progress: false
 
 env:
   # AlmaLinux 8 / glibc 2.28. Chosen over dockcross/manylinux2014 (glibc 2.17, what dcmqi

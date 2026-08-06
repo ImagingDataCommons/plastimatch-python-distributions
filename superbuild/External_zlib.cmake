@@ -38,8 +38,8 @@ ExternalProject_Add(zlib
 
 ExternalProject_Add_Step(zlib canonicalize
   COMMAND ${CMAKE_COMMAND}
-    -DZLIB_LIB_DIR=${ZLIB_PREFIX}/lib
-    -DOUTPUT_NAME=${ZLIB_CANONICAL_NAME}
+    -DZLIB_PREFIX=${ZLIB_PREFIX}
+    -DTARGET_PATH=${ZLIB_LIBRARY}
     -P ${CMAKE_CURRENT_LIST_DIR}/canonicalize_zlib.cmake
   DEPENDEES install
   COMMENT "Copying the zlib static library to a canonical name"

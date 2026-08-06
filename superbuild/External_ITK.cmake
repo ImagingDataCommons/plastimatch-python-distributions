@@ -27,7 +27,7 @@ ExternalProject_Add(ITK
 # Catch it here, next to the cause, rather than in a link error much later.
 ExternalProject_Add_Step(ITK check-no-bundled-zlib
   COMMAND ${CMAKE_COMMAND}
-    -DITK_LIB_DIR=${ITK_PREFIX}/lib
+    -DITK_PREFIX=${ITK_PREFIX}
     -P ${CMAKE_CURRENT_LIST_DIR}/check_itk_zlib.cmake
   DEPENDEES install
   COMMENT "Checking that ITK did not build its own zlib"

@@ -5,7 +5,15 @@
 # stay unprefixed and collide at link time. The resulting error names a plastimatch object
 # file and gives no hint that ITK is the cause, so check here instead.
 
-file(GLOB _bundled "${ITK_LIB_DIR}/libitkzlib*" "${ITK_LIB_DIR}/itkzlib*")
+if(NOT ITK_PREFIX)
+  message(FATAL_ERROR "ITK_PREFIX must be set")
+endif()
+
+# lib/ and lib64/ are both searched: this check silently passes -- the worst outcome for a
+# guard -- if it looks in a directory the libraries were never installed to.
+file(GLOB _bundled
+  "${ITK_PREFIX}/lib/libitkzlib*" "${ITK_PREFIX}/lib/itkzlib*"
+  "${ITK_PREFIX}/lib64/libitkzlib*" "${ITK_PREFIX}/lib64/itkzlib*")
 if(_bundled)
   message(FATAL_ERROR
     "ITK built its own zlib despite ITK_USE_SYSTEM_ZLIB=ON: ${_bundled}\n"

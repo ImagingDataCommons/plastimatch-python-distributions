@@ -110,6 +110,12 @@ set(SB_COMMON_ARGS
   -DBUILD_SHARED_LIBS:BOOL=OFF
   -DCMAKE_C_COMPILER:FILEPATH=${CMAKE_C_COMPILER}
   -DCMAKE_CXX_COMPILER:FILEPATH=${CMAKE_CXX_COMPILER}
+  # Pin the library install directory. GNUInstallDirs resolves CMAKE_INSTALL_LIBDIR to
+  # "lib64" on 64-bit RHEL-family systems -- which is what the manylinux images are -- and to
+  # "lib" on macOS and Debian. Leaving it to the default means the dependency install trees
+  # have a different shape on Linux than everywhere else, and any path this superbuild
+  # computes for a specific library is then wrong on exactly one platform.
+  -DCMAKE_INSTALL_LIBDIR:STRING=lib
   )
 
 if(APPLE)
