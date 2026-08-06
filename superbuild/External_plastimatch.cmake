@@ -44,6 +44,13 @@ ExternalProject_Add(plastimatch
   CMAKE_CACHE_ARGS
     ${SB_COMMON_ARGS}
     ${_plm_extra_args}
+    # plastimatch 1.10.0 opens with cmake_minimum_required(VERSION 3.1.3), and CMake 4 removed
+    # compatibility below 3.5 -- so the released tag cannot be configured by a current CMake
+    # at all. This is CMake's documented escape hatch for exactly that situation, and it is
+    # needed here because upstream's released source is not ours to patch. Note that
+    # plastimatch's own master has since raised the minimum to 3.7, which is why the CI on a
+    # fork tracking master never hit this.
+    -DCMAKE_POLICY_VERSION_MINIMUM:STRING=3.5
     -DCMAKE_PREFIX_PATH:STRING=${ZLIB_PREFIX}|${ITK_PREFIX}|${DCMTK_PREFIX}|${DLIB_PREFIX}
     -DCMAKE_FIND_PACKAGE_PREFER_CONFIG:BOOL=ON
     -DCMAKE_CXX_STANDARD:STRING=17

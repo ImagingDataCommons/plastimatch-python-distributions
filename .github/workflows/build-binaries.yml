@@ -59,6 +59,14 @@ jobs:
     permissions:
       contents: write
 
+    env:
+      # Where the superbuild builds. Defaults to build/ under the workspace; win64 overrides
+      # it in the matrix because ITK refuses to configure when its own source path exceeds 50
+      # characters, and the runner nests the repository name twice --
+      # D:\a\plastimatch-python-distributions\plastimatch-python-distributions\build\itk\src\...
+      # is 88 characters before ITK's own subdirectories even start.
+      SB_BUILD_DIR: ${{ matrix.build_dir || format('{0}/build', github.workspace) }}
+
     strategy:
       fail-fast: false
       matrix:
@@ -73,6 +81,7 @@ jobs:
             osx_arch: x86_64
           - id: win64
             os: windows-2022
+            build_dir: D:/b
 
     steps:
       - uses: actions/checkout@v7
@@ -91,11 +100,11 @@ jobs:
         uses: actions/cache@v5
         with:
           path: |
-            build/deps
-            build/zlib/src/zlib-stamp
-            build/itk/src/ITK-stamp
-            build/dcmtk/src/DCMTK-stamp
-            build/dlib/src/dlib-stamp
+            ${{ env.SB_BUILD_DIR }}/deps
+            ${{ env.SB_BUILD_DIR }}/zlib/src/zlib-stamp
+            ${{ env.SB_BUILD_DIR }}/itk/src/ITK-stamp
+            ${{ env.SB_BUILD_DIR }}/dcmtk/src/DCMTK-stamp
+            ${{ env.SB_BUILD_DIR }}/dlib/src/dlib-stamp
           key: >-
             ${{ matrix.id }}-${{ matrix.id == 'linux' && env.MANYLINUX_ID || matrix.os }}-deps-${{
               hashFiles('superbuild/CMakeLists.txt',
@@ -134,14 +143,14 @@ jobs:
               bash /work/scripts/build_binaries.sh
             '
           # Files written inside the container are root-owned, which breaks the later steps.
-          sudo chown -R "$(id -u):$(id -g)" build
+          sudo chown -R "$(id -u):$(id -g)" "${SB_BUILD_DIR}"
 
       - name: Build (macOS and Windows)
         if: matrix.id != 'linux'
         shell: bash
         env:
           SOURCE_DIR: ${{ github.workspace }}
-          BUILD_DIR: ${{ github.workspace }}/build
+          BUILD_DIR: ${{ env.SB_BUILD_DIR }}
           PLM_GIT_TAG: ${{ env.PLM_TAG }}
           OSX_ARCH: ${{ matrix.osx_arch }}
         run: bash scripts/build_binaries.sh
@@ -159,11 +168,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          plm_build="build/plastimatch-build"
+          plm_build="${SB_BUILD_DIR}/plastimatch-build"
           src=$(ls "$plm_build"/plastimatch-*.zip | head -1)
           base=$(basename "$src")
           ver=$(echo "$base" | sed -E 's/^plastimatch-([0-9][0-9.]*)-.*/\1/')
-          sha=$(git -C build/plastimatch/src/plastimatch rev-parse --short=7 HEAD)
+          sha=$(git -C "${SB_BUILD_DIR}/plastimatch/src/plastimatch" rev-parse --short=7 HEAD)
           dst="plastimatch-${ver}-${{ matrix.id }}-$(date -u +%Y%m%d)-${sha}.zip"
           mv "$src" "$plm_build/$dst"
           echo "path=$plm_build/$dst" >> "$GITHUB_OUTPUT"
