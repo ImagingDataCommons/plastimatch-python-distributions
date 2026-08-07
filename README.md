@@ -1,5 +1,9 @@
 # plastimatch Python distributions
 
+[![PyPI](https://img.shields.io/pypi/v/plastimatch.svg)](https://pypi.org/project/plastimatch/)
+[![Python versions](https://img.shields.io/pypi/pyversions/plastimatch.svg)](https://pypi.org/project/plastimatch/)
+[![License](https://img.shields.io/pypi/l/plastimatch.svg)](LICENSE)
+
 Platform-specific Python wheels containing the official
 [plastimatch](https://gitlab.com/plastimatch/plastimatch) command line executables, so that
 plastimatch can be installed with
@@ -38,13 +42,6 @@ and
 | `plastimatch` | The main multi-command driver (`convert`, `register`, `warp`, `synth`, `dice`, …) |
 | `dicom_uid` | Generate DICOM UIDs |
 
-## Current state
-
-Not yet published to PyPI. The two layers are joined up: `plastimatchUrls.cmake` pins the
-archives from [`binaries-1.10.0-1`](../../releases/tag/binaries-1.10.0-1), built by this
-repository's own build layer, so what remains before a first release is registering a Trusted
-Publisher and tagging `v1.10.0` — see [Publishing](#publishing).
-
 ## Supported platforms
 
 | Platform | Wheel tag | Minimum OS |
@@ -82,20 +79,22 @@ self-contained archive per platform to a GitHub release. This exists because ups
 plastimatch publishes source archives only — there is no official binary to download.
 
 `superbuild/` is an `ExternalProject` chain in the style of dcmqi's `CMakeExternals/`, so one
-CMake invocation builds everything in dependency order on all three platforms:
+CMake invocation builds everything in dependency order on every supported platform:
 
 ```console
 cmake -S superbuild -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
 
-Which plastimatch gets packaged is configurable, and defaults to the upstream GitLab
-repository — this project does not fork plastimatch:
+Which plastimatch gets packaged is configurable, and defaults to the pinned commit in
+`superbuild/CMakeLists.txt` on the upstream GitLab repository — this project does not fork
+plastimatch. Override only to build something else, and prefer a full SHA over a tag for the
+same reason the default is one:
 
 ```console
 cmake -S superbuild -B build \
   -DPLASTIMATCH_GIT_REPOSITORY=https://gitlab.com/plastimatch/plastimatch.git \
-  -DPLASTIMATCH_GIT_TAG=1.10.0
+  -DPLASTIMATCH_GIT_TAG=db24480dc1086df3278992d62a86e70d8654cb5d
 ```
 
 Everything the build consumes is pinned by content, not by name. The four dependencies carry
@@ -119,10 +118,10 @@ changes.
 
 `plastimatchUrls.cmake` is the seam. It names the archive and checksum for each platform and
 nothing else, which means the wheel layer is indifferent to who produced the binaries. That
-indifference is not hypothetical — it is what lets the pins currently reference a fork's
-archives while the build layer is still being brought up, and it is why pointing this file at
-upstream's own binaries and deleting the build layer would be the entire migration if
-plastimatch ever publishes them.
+indifference is not hypothetical: the pins referenced a separate repository's archives while
+this build layer was being brought up, and moving them here was a one-file change. By the same
+token, if upstream plastimatch ever publishes its own release binaries, pointing this file at
+them and deleting the build layer is the entire migration.
 
 ## Repointing the pins
 
@@ -219,34 +218,37 @@ development build cannot be uploaded by accident.
 
 ### Publishing
 
-Two repository-level prerequisites, in this order:
+Uploads use Trusted Publishing (OIDC), so there is no API token stored anywhere. The publishers
+are registered on both indexes against:
 
-**1. The repository must be public before the pins point at it.** The wheel layer downloads the
-pinned archives over plain HTTPS with no credentials — `FetchContent` has none to offer, and
-neither does `pip install` on a developer's machine. Release assets on a private repository are
-not reachable that way, so repointing the pins at a private repository breaks every wheel
-build, not just CI. This is why the pins still reference the fork: that repository is public.
+| Field | Value |
+| --- | --- |
+| Project name | `plastimatch` |
+| Owner | `ImagingDataCommons` |
+| Repository name | `plastimatch-python-distributions` |
+| Workflow name | `cd.yml` |
 
-**2. Register a Trusted Publisher**, so there is no API token to manage. Because the project
-does not exist on either index yet, these are *pending* publishers:
+The owner is checked against an OIDC claim, so it has to match wherever the repository actually
+lives when the workflow runs — worth re-checking after any repository transfer, since a stale
+owner fails the upload rather than falling back to anything.
 
-| Field | PyPI | TestPyPI |
-| --- | --- | --- |
-| Register at | <https://pypi.org/manage/account/publishing/> | <https://test.pypi.org/manage/account/publishing/> |
-| Project name | `plastimatch` | `plastimatch` |
-| Owner | `ImagingDataCommons` | `ImagingDataCommons` |
-| Repository name | `plastimatch-python-distributions` | `plastimatch-python-distributions` |
-| Workflow name | `cd.yml` | `cd.yml` |
-| Environment name | `pypi` | `testpypi` |
+The `pypi` and `testpypi` GitHub environments both require a reviewer, so every upload pauses
+for a human approval. That is the last reversible moment: once a version is on an index it can
+never be reused, even after deleting the release.
 
-The owner must match wherever the repository actually lives when the workflow runs — an OIDC
-claim is checked against it, so registering the wrong owner fails the upload. Register after
-any planned move, not before. The environment names must match the `environment:` keys on the
-`upload_pypi` and `upload_testpypi` jobs in `cd.yml`.
+> The publishers currently leave the **environment name blank**, which matches any environment.
+> Naming `pypi` and `testpypi` there as well would mean a workflow change that bypassed the
+> environment is rejected by the index too, rather than only by GitHub. Optional hardening; the
+> current setup works.
 
-Both environments are created automatically on first use, but creating them explicitly with a
-required reviewer makes every publish need a human approval — recommended for `pypi`, given
-that uploads cannot be undone.
+Two prerequisites that are already satisfied but are easy to break:
+
+- **The repository must stay public.** The wheel layer fetches the pinned archives over plain
+  HTTPS with no credentials — `FetchContent` has none to offer, and neither does `pip install`
+  on a developer's machine. Making the repository private breaks every wheel build, not just
+  CI, because the release assets stop being reachable.
+- **The `[project.urls]` and license metadata are baked into published artifacts** and cannot
+  be corrected in place afterwards, only superseded by a new `.postN`.
 
 ### Cutting a release
 
@@ -258,18 +260,32 @@ both and a rehearsal cannot consume the real version number:
 | pre-release | `v1.10.0rc1` | TestPyPI |
 | full release | `v1.10.0` | PyPI |
 
-So the sequence is: tag `v1.10.0rc1` and mark the GitHub release as a pre-release, confirm the
-upload and that `pip install -i https://test.pypi.org/simple/ plastimatch` gives a working
-executable, then tag `v1.10.0` as a full release. `1.10.0rc1` sorts before `1.10.0`, so the
-rehearsal is also a legitimate pre-release rather than a number burned for nothing.
+So a full release goes: tag `v<version>rc1`, mark the GitHub release as a pre-release, confirm
+the TestPyPI upload and that
 
-Two things worth knowing before the first upload:
+```console
+pip install --pre -i https://test.pypi.org/simple/ plastimatch
+```
 
-- **A published version can never be reused**, even after deleting the release. Rehearse on
-  TestPyPI, not on the real index.
-- Only tagged *upstream releases* get published here. Packaging an untagged upstream snapshot
-  has no good PEP 440 spelling — `.postN` is already spoken for, and a `.devN` would sort
-  before the release it comes after — so snapshots stay as GitHub release assets.
+gives a working executable, then tag `v<version>` as a full release. An `rc` sorts before the
+release it rehearses, so it is a legitimate pre-release rather than a number burned for
+nothing — which matters because **a published version can never be reused**, on either index,
+even after deleting the release.
+
+Only tagged *upstream releases* get published here. Packaging an untagged upstream snapshot has
+no good PEP 440 spelling — `.postN` is already spoken for, and a `.devN` would sort before the
+release it comes after — so snapshots stay as GitHub release assets.
+
+The full sequence for a new upstream version is therefore:
+
+1. Bump `PLASTIMATCH_GIT_TAG` (and `PLASTIMATCH_VERSION_LABEL`) in `superbuild/CMakeLists.txt`
+   to the new commit SHA.
+2. Cut `binaries-<version>-1` and repoint the pins — see
+   [Repointing the pins](#repointing-the-pins).
+3. Tag `v<version>rc1` as a pre-release, check TestPyPI, then `v<version>` as a full release.
+
+A packaging-only fix skips steps 1 and 2 entirely and just needs a `v<version>.postN` tag,
+since the existing archives are reused unchanged.
 
 Because two `.postN` wheels can wrap different builds of the same upstream tag, the exact
 upstream commit is recorded in each archive's filename and pinned in `plastimatchUrls.cmake`,
