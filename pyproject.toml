@@ -16,7 +16,11 @@ classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Science/Research",
   "Intended Audience :: Developers",
-  "License :: OSI Approved :: BSD License",
+  # MIT, matching LICENSE: this classifier describes the packaging code in this repository.
+  # The bundled plastimatch, ITK, DCMTK, dlib and zlib-ng binaries carry their own licenses,
+  # installed into plastimatch/share/licenses/ inside every wheel. Same arrangement as the
+  # sibling dcmqi and s5cmd distributions, which are MIT and bundle their own upstreams.
+  "License :: OSI Approved :: MIT License",
   "Operating System :: MacOS",
   "Operating System :: Microsoft :: Windows",
   "Operating System :: POSIX :: Linux",
@@ -51,9 +55,9 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/fedorov/plastimatch-python-distributions"
-"Bug Tracker" = "https://github.com/fedorov/plastimatch-python-distributions/issues"
-Changelog = "https://github.com/fedorov/plastimatch-python-distributions/releases"
+Homepage = "https://github.com/ImagingDataCommons/plastimatch-python-distributions"
+"Bug Tracker" = "https://github.com/ImagingDataCommons/plastimatch-python-distributions/issues"
+Changelog = "https://github.com/ImagingDataCommons/plastimatch-python-distributions/releases"
 Upstream = "https://gitlab.com/plastimatch/plastimatch"
 
 
