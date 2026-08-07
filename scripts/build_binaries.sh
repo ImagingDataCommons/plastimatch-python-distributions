@@ -72,6 +72,31 @@ echo "=== running the plastimatch test suite ==="
 ( cd "${plm_build}" && ctest --output-on-failure -C Release )
 
 echo "=== packaging ==="
-( cd "${plm_build}" && cpack -G ZIP -C Release )
+# The archive's name is not the same on every platform. plastimatch's CMakeLists resets
+# CPACK_PACKAGE_NAME to "Plastimatch" inside an `if (CPACK_GENERATOR STREQUAL "WIX")` block,
+# and CPACK_GENERATOR defaults to WIX on Windows, so the name is fixed at configure time and
+# `cpack -G ZIP` does not undo it:
+#
+#   Linux/macOS   plastimatch-1.10.0-Linux.zip
+#   Windows       Plastimatch-1.10.0-win64.zip
+#
+# So do not guess it. cpack reports the absolute path of what it wrote; parse that instead,
+# which is also immune to any future change in how the name is composed.
+cpack_log="${BUILD_DIR}/cpack-output.txt"
+( cd "${plm_build}" && cpack -G ZIP -C Release ) | tee "${cpack_log}"
 
-ls -la "${plm_build}"/plastimatch-*.zip
+package="$(tr -d '\r' < "${cpack_log}" \
+  | sed -n 's/^CPack: - package: \(.*\) generated\.$/\1/p' | head -1)"
+
+if [ -z "${package}" ] || [ ! -f "${package}" ]; then
+  echo "::error::could not determine which package cpack produced; see ${cpack_log}" >&2
+  exit 1
+fi
+
+# The basename, not the path. On Linux this script runs inside the manylinux container, where
+# BUILD_DIR is /work/build; the workflow steps that consume this run on the host, where the
+# same directory has a different absolute path. The basename is the only part that travels.
+basename "${package}" > "${BUILD_DIR}/package-name.txt"
+
+ls -la "${package}"
+echo "package: ${package}"

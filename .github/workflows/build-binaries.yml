@@ -158,20 +158,31 @@ jobs:
       #-------------------------------------------------------------------------------------
       # Package
       #-------------------------------------------------------------------------------------
-      # CPack alone produces plastimatch-1.10.0-Linux.zip for every build. Rename so the asset
-      # carries the platform, build date and the plastimatch commit it was built from: the
-      # per-platform assets then do not collide on a release, and it is possible to tell which
-      # source a given archive came from. update_plastimatch_urls.py matches on the platform
-      # infix, so those must stay as they are.
+      # CPack names the archive after the platform it was built on, and not consistently --
+      # plastimatch-1.10.0-Linux.zip on Linux and macOS, Plastimatch-1.10.0-win64.zip on
+      # Windows (see the note in build_binaries.sh). That script records the name it actually
+      # produced, so this step reads it rather than globbing for a name it expects.
+      #
+      # Rename so the asset carries the platform, build date and the plastimatch commit it was
+      # built from: the per-platform assets then do not collide on a release, and it is
+      # possible to tell which source a given archive came from. update_plastimatch_urls.py
+      # matches on the platform infix, so those must stay as they are.
       - name: Name the package
         id: pkg
         shell: bash
         run: |
           set -euo pipefail
           plm_build="${SB_BUILD_DIR}/plastimatch-build"
-          src=$(ls "$plm_build"/plastimatch-*.zip | head -1)
-          base=$(basename "$src")
-          ver=$(echo "$base" | sed -E 's/^plastimatch-([0-9][0-9.]*)-.*/\1/')
+          name_file="${SB_BUILD_DIR}/package-name.txt"
+          test -f "$name_file" || { echo "::error::$name_file missing -- did the build package anything?"; exit 1; }
+          base=$(tr -d '\r\n' < "$name_file")
+          src="$plm_build/$base"
+          test -f "$src" || { echo "::error::$src does not exist"; exit 1; }
+          # Case-insensitive on the leading P for the same reason.
+          ver=$(echo "$base" | sed -E 's/^[Pp]lastimatch-([0-9][0-9.]*)-.*\.zip$/\1/')
+          if [ -z "$ver" ] || [ "$ver" = "$base" ]; then
+            echo "::error::could not parse a version out of '$base'"; exit 1
+          fi
           sha=$(git -C "${SB_BUILD_DIR}/plastimatch/src/plastimatch" rev-parse --short=7 HEAD)
           dst="plastimatch-${ver}-${{ matrix.id }}-$(date -u +%Y%m%d)-${sha}.zip"
           mv "$src" "$plm_build/$dst"
