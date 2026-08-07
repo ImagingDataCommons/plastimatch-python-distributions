@@ -233,20 +233,36 @@ development build cannot be uploaded by accident.
 
 ### Publishing
 
-PyPI publishing uses Trusted Publishing (OIDC), so there is no API token to manage. Before the
-first upload, a pending publisher has to be registered at
-<https://pypi.org/manage/account/publishing/> with:
+Two repository-level prerequisites, in this order:
+
+**1. The repository must be public before the pins point at it.** The wheel layer downloads the
+pinned archives over plain HTTPS with no credentials — `FetchContent` has none to offer, and
+neither does `pip install` on a developer's machine. Release assets on a private repository are
+not reachable that way, so repointing the pins at a private repository breaks every wheel
+build, not just CI. This is why the pins still reference the fork: that repository is public.
+
+**2. Register a Trusted Publisher**, so there is no API token to manage. Because the project
+does not exist on PyPI yet, this is a *pending* publisher, added at
+<https://pypi.org/manage/account/publishing/>:
 
 | Field | Value |
 | --- | --- |
 | PyPI project name | `plastimatch` |
-| Owner | `fedorov` |
+| Owner | the account or organisation owning this repository at publish time |
 | Repository name | `plastimatch-python-distributions` |
 | Workflow name | `cd.yml` |
 | Environment name | `pypi` |
 
-Registering the same on <https://test.pypi.org/manage/account/publishing/> allows a rehearsal
-first, which is worth doing because a published version can never be reused.
+The owner must match wherever the repository actually lives when the workflow runs — an OIDC
+claim is checked against it, so registering the wrong owner fails the upload. Register it after
+any planned move, not before.
+
+Registering the same on <https://test.pypi.org/manage/account/publishing/> allows a rehearsal,
+which is worth doing because a published version can never be reused.
+
+The `pypi` GitHub environment referenced by `cd.yml` is created automatically on first use, but
+creating it explicitly with a required reviewer makes every publish need a human approval —
+recommended, given that uploads cannot be undone.
 
 Two things worth knowing before the first upload:
 
