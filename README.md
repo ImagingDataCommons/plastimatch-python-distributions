@@ -40,28 +40,12 @@ and
 
 ## Current state
 
-Nothing is published to PyPI yet, and the two layers described below are not yet joined up:
-the build layer works but has not cut a release, so `plastimatchUrls.cmake` still pins
-archives built by an older set of per-platform workflows in a **plastimatch fork**
-(`fedorov/plastimatch`) that predates this repository.
-
-That is the only reason the pins name a repository other than this one. Once the build layer
-publishes a release, the pins move to this repository's own archives and the fork stops being
-involved — see [Repointing the pins](#repointing-the-pins). Until then the two tables below
-differ, and the first one is what `pip install` would actually get.
+Not yet published to PyPI. The two layers are joined up: `plastimatchUrls.cmake` pins the
+archives from [`binaries-1.10.0-1`](../../releases/tag/binaries-1.10.0-1), built by this
+repository's own build layer, so what remains before a first release is registering a Trusted
+Publisher and tagging `v1.10.0` — see [Publishing](#publishing).
 
 ## Supported platforms
-
-What the **currently pinned** archives support:
-
-| Platform | Wheel tag | Minimum OS | Status |
-| --- | --- | --- | --- |
-| Windows x86_64 | `win_amd64` | Windows 10+ | working |
-| macOS x86_64 (Intel) | `macosx_15_0_x86_64` | macOS 15 | working, floor too high |
-| macOS arm64 (Apple Silicon) | `macosx_15_0_arm64` | macOS 15 | working, floor too high |
-| Linux x86_64 | `manylinux_2_38_x86_64` | glibc 2.38 (Ubuntu 23.10+) | **not publishable** |
-
-What the **build layer in this repository** produces:
 
 | Platform | Wheel tag | Minimum OS |
 | --- | --- | --- |
@@ -71,14 +55,12 @@ What the **build layer in this repository** produces:
 | Linux x86_64 | `manylinux_2_28_x86_64` | glibc 2.28 (RHEL 8, Debian 10, Ubuntu 18.10+) |
 
 The platform tags are derived from the bundled binaries rather than declared by hand (see
-`scripts/retag_*_wheel.sh`), so they always describe what the wheel can actually run on, and
-the wheel layer picks up the lower floors automatically once the pins move.
-
-The floors in the first table are inherited from the runner images those binaries happened to
-be compiled on, not from anything plastimatch requires. The Linux one is a hard blocker rather
-than an inconvenience: glibc 2.38 is newer than any manylinux image pypa publishes, so that
-wheel cannot be built or tested in a conforming environment at all — which is why the build
-layer compiles inside `manylinux_2_28`, and why the Linux wheel job fails until the pins move.
+`scripts/retag_*_wheel.sh`), so they always describe what the wheel can actually run on. That
+is not cosmetic: an earlier set of archives compiled on `ubuntu-24.04` required glibc 2.38 and
+`GLIBCXX_3.4.32`, newer than any manylinux image pypa publishes, so the resulting wheel could
+not be installed anywhere — including in cibuildwheel's own test container. Compiling inside
+`manylinux_2_28` is what fixes that, and `scripts/check_binary_floor.sh` asserts it after every
+Linux build.
 
 ## How it works
 
@@ -151,18 +133,22 @@ SHA256 per platform. Regenerate that section from a release with:
 python scripts/update_plastimatch_urls.py --repo <owner>/<repo> --tag <tag>
 ```
 
-The `--repo` to use is whichever one hosts the archives:
+The script rewrites the filenames and checksums *and* the `PLASTIMATCH_BINARIES_REPO` and
+`PLASTIMATCH_BINARIES_TAG` variables, because those are the other half of the same pin: the
+block names files, those two turn a name into a URL. Updating only the block yields a file that
+looks consistent and resolves to nothing.
 
-- `fedorov/plastimatch-python-distributions` — this repository, once `build-binaries.yml` has
-  been dispatched with a `release_tag`. **This is the intended steady state.**
-- `fedorov/plastimatch` — the fork whose older workflows produced the archives pinned today.
-  Interim only.
+To cut a new set of archives:
 
-Cutting a release is deliberately not automatic on push. The pins are checksums of specific
-assets, so replacing the assets under an existing tag would break every wheel build pointing
-at it; the workflow only attaches archives when a `release_tag` input is supplied explicitly.
-For the same reason the pins should reference an immutable tag rather than a rolling one
-before anything is published to PyPI.
+1. `gh release create binaries-<version>-<n> --draft` — a draft, so the assets can be checked
+   before the URLs become permanent.
+2. Dispatch `build-binaries.yml` with `release_tag` set to that tag. Attaching is opt-in and
+   never happens on push: the pins are checksums of specific assets, so replacing them under an
+   existing tag would break every wheel build referencing it.
+3. Publish the release, then run the script above and commit the result.
+
+`.github/scripts/verify_pins.py` re-downloads every pinned archive and checks its checksum; CI
+runs it on each push, which is what would catch a release whose assets were replaced.
 
 ## Versioning
 
