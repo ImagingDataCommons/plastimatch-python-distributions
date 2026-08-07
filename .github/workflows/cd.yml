@@ -117,21 +117,53 @@ jobs:
       - name: Show wheel tags
         run: ls -la all/*/*
 
-  upload_all:
+  # Where a release goes is decided by two things, both read off the GitHub release itself.
+  #
+  # The tag prefix picks out releases *of this package*. build-binaries.yml also publishes
+  # GitHub releases -- tagged binaries-<version>-<n>, carrying the prebuilt plastimatch
+  # archives that plastimatchUrls.cmake pins -- and those must never reach an index. Without
+  # the tag check every one of them would trigger an upload of a wheel built from whatever the
+  # pins happened to reference at the time.
+  #
+  # The prerelease flag then picks the index. Mark the release a pre-release (and tag it
+  # v<version>rc<n>) to rehearse on TestPyPI; a full release publishes to PyPI. Nothing goes to
+  # both, so a rehearsal cannot consume the real version number -- which matters because
+  # neither index ever lets a version be reused, even after deletion.
+
+  upload_testpypi:
+    name: Publish to TestPyPI
+    needs: [check_dist]
+    environment: testpypi
+    permissions:
+      id-token: write
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'release' && github.event.action == 'published'
+      && startsWith(github.event.release.tag_name, 'v')
+      && github.event.release.prerelease
+
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: cibw-*
+          path: dist
+          merge-multiple: true
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  upload_pypi:
     name: Publish to PyPI
     needs: [check_dist]
     environment: pypi
     permissions:
       id-token: write
     runs-on: ubuntu-latest
-    # Only v-prefixed tags are releases of this package. build-binaries.yml also publishes
-    # GitHub releases -- tagged binaries-<version>-<n>, carrying the prebuilt plastimatch
-    # archives that plastimatchUrls.cmake pins -- and those must never reach PyPI. Without the
-    # tag check every one of them would trigger an upload, publishing a wheel built from
-    # whatever the pins happened to reference at the time.
     if: >-
       github.event_name == 'release' && github.event.action == 'published'
       && startsWith(github.event.release.tag_name, 'v')
+      && !github.event.release.prerelease
 
     steps:
       - uses: actions/download-artifact@v8

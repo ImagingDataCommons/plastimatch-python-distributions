@@ -228,27 +228,40 @@ not reachable that way, so repointing the pins at a private repository breaks ev
 build, not just CI. This is why the pins still reference the fork: that repository is public.
 
 **2. Register a Trusted Publisher**, so there is no API token to manage. Because the project
-does not exist on PyPI yet, this is a *pending* publisher, added at
-<https://pypi.org/manage/account/publishing/>:
+does not exist on either index yet, these are *pending* publishers:
 
-| Field | Value |
-| --- | --- |
-| PyPI project name | `plastimatch` |
-| Owner | the account or organisation owning this repository at publish time |
-| Repository name | `plastimatch-python-distributions` |
-| Workflow name | `cd.yml` |
-| Environment name | `pypi` |
+| Field | PyPI | TestPyPI |
+| --- | --- | --- |
+| Register at | <https://pypi.org/manage/account/publishing/> | <https://test.pypi.org/manage/account/publishing/> |
+| Project name | `plastimatch` | `plastimatch` |
+| Owner | `ImagingDataCommons` | `ImagingDataCommons` |
+| Repository name | `plastimatch-python-distributions` | `plastimatch-python-distributions` |
+| Workflow name | `cd.yml` | `cd.yml` |
+| Environment name | `pypi` | `testpypi` |
 
 The owner must match wherever the repository actually lives when the workflow runs — an OIDC
-claim is checked against it, so registering the wrong owner fails the upload. Register it after
-any planned move, not before.
+claim is checked against it, so registering the wrong owner fails the upload. Register after
+any planned move, not before. The environment names must match the `environment:` keys on the
+`upload_pypi` and `upload_testpypi` jobs in `cd.yml`.
 
-Registering the same on <https://test.pypi.org/manage/account/publishing/> allows a rehearsal,
-which is worth doing because a published version can never be reused.
+Both environments are created automatically on first use, but creating them explicitly with a
+required reviewer makes every publish need a human approval — recommended for `pypi`, given
+that uploads cannot be undone.
 
-The `pypi` GitHub environment referenced by `cd.yml` is created automatically on first use, but
-creating it explicitly with a required reviewer makes every publish need a human approval —
-recommended, given that uploads cannot be undone.
+### Cutting a release
+
+Which index a release goes to is decided by the GitHub release itself, so nothing ever lands on
+both and a rehearsal cannot consume the real version number:
+
+| Release | Tag | Publishes to |
+| --- | --- | --- |
+| pre-release | `v1.10.0rc1` | TestPyPI |
+| full release | `v1.10.0` | PyPI |
+
+So the sequence is: tag `v1.10.0rc1` and mark the GitHub release as a pre-release, confirm the
+upload and that `pip install -i https://test.pypi.org/simple/ plastimatch` gives a working
+executable, then tag `v1.10.0` as a full release. `1.10.0rc1` sorts before `1.10.0`, so the
+rehearsal is also a legitimate pre-release rather than a number burned for nothing.
 
 Two things worth knowing before the first upload:
 
