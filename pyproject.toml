@@ -72,6 +72,13 @@ wheel.py-api = "py3"
 
 [tool.setuptools_scm]
 write_to = "src/plastimatch/_version.py"
+# Releases are named after the upstream plastimatch version they package, with packaging-only
+# revisions as PEP 440 post-releases (1.10.0, then 1.10.0.post1). The default version_scheme,
+# guess-next-dev, does not fit that: it reports an untagged commit after 1.10.0 as
+# "1.10.1.dev2", inventing a next *upstream* release this project does not control and may
+# never package. post-release reports "1.10.0.post2" instead, which is what the next release
+# from here would actually be called. See the Versioning section of the README.
+version_scheme = "post-release"
 
 
 [tool.cibuildwheel]

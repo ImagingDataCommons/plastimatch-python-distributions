@@ -164,9 +164,62 @@ at it; the workflow only attaches archives when a `release_tag` input is supplie
 For the same reason the pins should reference an immutable tag rather than a rolling one
 before anything is published to PyPI.
 
-The wheel version itself comes from this repository's git tags via `setuptools_scm`. Tag
-releases to match the upstream plastimatch version being packaged (`1.10.0`), and use a
-`.postN` suffix (`1.10.0.post1`) for packaging-only fixes that ship the same binaries.
+## Versioning
+
+A release version **is the upstream plastimatch version, exactly**, with packaging revisions
+expressed as PEP 440 post-releases:
+
+| Wheel version | Means |
+| --- | --- |
+| `1.10.0` | plastimatch 1.10.0 |
+| `1.10.0.post1` | plastimatch 1.10.0 again — same upstream source, packaging fixed |
+| `1.10.0.post2` | ditto, second packaging fix |
+| `1.11.0` | plastimatch 1.11.0 |
+
+So `pip install plastimatch==1.10.0` gets you plastimatch 1.10.0, which is the only thing a
+user of this package is likely to reason about. These sort correctly:
+`1.10.0 < 1.10.0.post1 < 1.11.0`.
+
+Post-releases rather than the two obvious alternatives:
+
+- **Not a fourth component** (`1.10.0.1`). PEP 440 defines `.postN` as precisely this case — a
+  correction to a release with no change to the software itself — whereas `1.10.0.1` would read
+  as an upstream plastimatch version that does not exist, sending anyone who saw it looking for
+  a release that was never made. Upstream's own version numbers are three-component; it does
+  generate a fourth from `git describe` (`PLM_VERSION_TWEAK`), but only for builds *between*
+  tags, never for a release, so that slot already reads as "commits since tag" to anyone who
+  has built plastimatch from git.
+- **Not a local version** (`1.10.0+plm1`). PyPI rejects local version identifiers outright, so
+  this is unavailable rather than merely worse.
+
+The cost is that a packaging change is invisible unless you read the `.postN`, and that a
+packaging fix cannot be pre-released. Both are acceptable for a wrapper whose version is a
+claim about what is inside it.
+
+Note that the two projects this one is modelled on disagree here:
+`dcmqi-python-distributions` published `0.1.0` … `0.4.1` under its own numbering before
+switching to upstream's (`1.5.6`), while `s5cmd-python-distributions` still numbers
+independently. Mirroring upstream from the start avoids the one-way version jump that switch
+required — published versions can only go up.
+
+Versions come from this repository's git tags via `setuptools_scm`, so cutting a release is
+tagging one. `version_scheme = "post-release"` is set deliberately: the default,
+`guess-next-dev`, reports an untagged commit after `1.10.0` as `1.10.1.dev2`, inventing a *next
+upstream release* this project neither controls nor may ever package. `post-release` reports
+`1.10.0.post2` instead. Untagged builds also carry a local version segment (`+g<sha>`), which
+PyPI refuses, so a development build cannot be uploaded by accident.
+
+Two things worth knowing before the first upload:
+
+- **A published version can never be reused**, even after deleting the release. Rehearse on
+  TestPyPI, not on the real index.
+- Only tagged *upstream releases* get published here. Packaging an untagged upstream snapshot
+  has no good PEP 440 spelling — `.postN` is already spoken for, and a `.devN` would sort
+  before the release it comes after — so snapshots stay as GitHub release assets.
+
+Because two `.postN` wheels can wrap different builds of the same upstream tag, the exact
+upstream commit is recorded in each archive's filename and pinned in `plastimatchUrls.cmake`,
+which is what makes a given wheel traceable to a source revision.
 
 ## Development
 
