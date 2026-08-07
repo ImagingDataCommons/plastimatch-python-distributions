@@ -202,12 +202,51 @@ switching to upstream's (`1.5.6`), while `s5cmd-python-distributions` still numb
 independently. Mirroring upstream from the start avoids the one-way version jump that switch
 required — published versions can only go up.
 
-Versions come from this repository's git tags via `setuptools_scm`, so cutting a release is
-tagging one. `version_scheme = "post-release"` is set deliberately: the default,
-`guess-next-dev`, reports an untagged commit after `1.10.0` as `1.10.1.dev2`, inventing a *next
-upstream release* this project neither controls nor may ever package. `post-release` reports
-`1.10.0.post2` instead. Untagged builds also carry a local version segment (`+g<sha>`), which
-PyPI refuses, so a development build cannot be uploaded by accident.
+### Tags
+
+There are two independent tag namespaces, because this repository publishes two different
+kinds of thing:
+
+| Tag | What it is | Published to |
+| --- | --- | --- |
+| `v1.10.0` | a release of *this package* | PyPI |
+| `binaries-1.10.0-1` | a set of prebuilt plastimatch archives | GitHub release only |
+
+Binaries releases exist so `plastimatchUrls.cmake` has immutable URLs to pin, and they are
+re-cut whenever the build layer changes without any new upstream version. Keeping them out of
+the version namespace matters in two places, both of which are configured rather than
+conventional:
+
+- `setuptools_scm` is restricted to `v`-prefixed tags. At its defaults it matches any tag
+  containing a digit, and its `tag_regex` has an optional `[\w-]+-` prefix group, so it reads
+  `binaries-1.10.0-1` as version `1.10.0` and the next commit builds as `1.10.0.post1.post1`.
+- The PyPI upload job in `cd.yml` is gated on the release tag starting with `v`. It triggers on
+  `release: published`, which a binaries release also is, so without the check every binaries
+  release would publish a wheel built from whatever the pins referenced at the time.
+
+Versions come from those tags via `setuptools_scm`, so cutting a release is tagging one.
+`version_scheme = "post-release"` is set deliberately: the default, `guess-next-dev`, reports
+an untagged commit after `v1.10.0` as `1.10.1.dev2`, inventing a *next upstream release* this
+project neither controls nor may ever package. `post-release` reports `1.10.0.post2` instead.
+Untagged builds also carry a local version segment (`+g<sha>`), which PyPI refuses, so a
+development build cannot be uploaded by accident.
+
+### Publishing
+
+PyPI publishing uses Trusted Publishing (OIDC), so there is no API token to manage. Before the
+first upload, a pending publisher has to be registered at
+<https://pypi.org/manage/account/publishing/> with:
+
+| Field | Value |
+| --- | --- |
+| PyPI project name | `plastimatch` |
+| Owner | `fedorov` |
+| Repository name | `plastimatch-python-distributions` |
+| Workflow name | `cd.yml` |
+| Environment name | `pypi` |
+
+Registering the same on <https://test.pypi.org/manage/account/publishing/> allows a rehearsal
+first, which is worth doing because a published version can never be reused.
 
 Two things worth knowing before the first upload:
 

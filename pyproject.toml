@@ -79,6 +79,18 @@ write_to = "src/plastimatch/_version.py"
 # never package. post-release reports "1.10.0.post2" instead, which is what the next release
 # from here would actually be called. See the Versioning section of the README.
 version_scheme = "post-release"
+# This repository has two independent tag namespaces and only one of them is a wheel version:
+#
+#   v1.10.0             a release of *this package*  -> wheel version 1.10.0
+#   binaries-1.10.0-1   a set of prebuilt plastimatch archives, referenced by
+#                       plastimatchUrls.cmake and never published to PyPI
+#
+# Left at the defaults, setuptools_scm matches any tag containing a digit and its default
+# tag_regex has an optional "[\w-]+-" prefix group, so it reads "binaries-1.10.0-1" as version
+# 1.10.0 and a later commit then builds as "1.10.0.post1.post1". Restricting both the describe
+# match and the regex to v-prefixed tags keeps the binaries releases invisible here.
+tag_regex = "^v(?P<version>\\d+(?:\\.\\d+){0,2}[^\\+]*)(?:\\+.*)?$"
+git_describe_command = ["git", "describe", "--dirty", "--tags", "--long", "--match", "v*"]
 
 
 [tool.cibuildwheel]

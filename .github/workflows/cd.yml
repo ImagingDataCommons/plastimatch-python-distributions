@@ -124,7 +124,14 @@ jobs:
     permissions:
       id-token: write
     runs-on: ubuntu-latest
-    if: github.event_name == 'release' && github.event.action == 'published'
+    # Only v-prefixed tags are releases of this package. build-binaries.yml also publishes
+    # GitHub releases -- tagged binaries-<version>-<n>, carrying the prebuilt plastimatch
+    # archives that plastimatchUrls.cmake pins -- and those must never reach PyPI. Without the
+    # tag check every one of them would trigger an upload, publishing a wheel built from
+    # whatever the pins happened to reference at the time.
+    if: >-
+      github.event_name == 'release' && github.event.action == 'published'
+      && startsWith(github.event.release.tag_name, 'v')
 
     steps:
       - uses: actions/download-artifact@v8
